@@ -134,3 +134,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Random files
+ai.js
+e.js
+main.js
+saved_data.json

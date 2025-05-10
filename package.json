@@ -1,0 +1,26 @@
+{
+  "name": "enn",
+  "version": "1.0.0",
+  "description": "N/A",
+  "main": "enn.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LoganPaxton/neural-net.git"
+  },
+  "keywords": [
+    "AI"
+  ],
+  "author": "LoganPaxton",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LoganPaxton/neural-net/issues"
+  },
+  "homepage": "https://github.com/LoganPaxton/neural-net#readme",
+  "type": "module",
+  "dependencies": {
+    "fs": "^0.0.1-security"
+  }
+}
