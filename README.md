@@ -1,1 +1,1 @@
-# neural-net
+# ENN.js
