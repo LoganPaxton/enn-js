@@ -1,213 +1,131 @@
-import 'fs'
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync } from "fs";
+
+class Layer {
+    constructor(input_size, output_size, activation = "sigmoid") {
+        this.weights = Array.from({ length: output_size }, () =>
+            Array.from({ length: input_size }, () => Math.random() * 2 - 1)
+        );
+        this.bias = Array.from({ length: output_size }, () => Math.random() * 2 - 1);
+        this.activation = activation;
+    }
+
+    activate(x) {
+        switch (this.activation) {
+            case "relu": return Math.max(0, x);
+            case "sigmoid": return 1 / (1 + Math.exp(-x));
+            default: return x; // linear
+        }
+    }
+
+    derivative(outputValue) {
+        switch (this.activation) {
+            case "relu": return outputValue > 0 ? 1 : 0;
+            case "sigmoid": return outputValue * (1 - outputValue);
+            default: return 1;
+        }
+    }
+}
 
 export class Brain {
-    constructor(input_nodes, hidden_nodes, output_nodes) {
-        this.hidden_weights = [];
-        this.output_weights = [];
+    constructor(input_nodes, hidden_nodes, output_nodes, activation = "sigmoid") {
+        this.layers = [
+            new Layer(input_nodes, hidden_nodes, activation),
+            new Layer(hidden_nodes, output_nodes, activation),
+        ];
+    }
 
-        this.hidden_bias = [];
-        this.output_bias = [];
+    static dot(a, b) {
+        return a.reduce((sum, val, i) => sum + val * b[i], 0);
+    }
 
-        
-        // WEIGHTS
-        // Assign random values for hidden weights
-        for (let i = 0; i < hidden_nodes; i++) {
-            this.hidden_weights[i] = [];
-            for (let j = 0; j < input_nodes; j++) {
-                this.hidden_weights[i][j] = Math.random() * 2 - 1;
+    // Feedforward and record activations
+    feedForward(inputs) {
+        const activations = [inputs];
+        let outputs = inputs;
+
+        for (let layer of this.layers) {
+            const next_outputs = [];
+
+            for (let i = 0; i < layer.weights.length; i++) {
+                const weighted_sum = Brain.dot(outputs, layer.weights[i]) + layer.bias[i];
+                next_outputs.push(layer.activate(weighted_sum));
+            }
+
+            outputs = next_outputs;
+            activations.push(outputs);
+        }
+
+        this._lastActivations = activations;
+        return outputs;
+    }
+
+    backpropagation(sample, lr) {
+        if (!this._lastActivations) {
+            this.feedForward(sample.input);
+        }
+
+        const activations = this._lastActivations;
+        let errors = activations.at(-1).map((out, i) => sample.output[i] - out);
+
+        for (let l = this.layers.length - 1; l >= 0; l--) {
+            const layer = this.layers[l];
+            const outputs = activations[l + 1];
+            const prev_outputs = activations[l];
+
+            // Gradient = error * derivative(output)
+            const gradients = outputs.map((out, i) => errors[i] * layer.derivative(out));
+
+            // Update weights and biases
+            for (let i = 0; i < layer.weights.length; i++) {
+                for (let j = 0; j < layer.weights[i].length; j++) {
+                    layer.weights[i][j] += lr * gradients[i] * prev_outputs[j];
+                }
+                layer.bias[i] += lr * gradients[i];
+            }
+
+            // Calculate errors for previous layer
+            if (l > 0) {
+                const new_errors = new Array(layer.weights[0].length).fill(0);
+                for (let i = 0; i < layer.weights.length; i++) {
+                    for (let j = 0; j < layer.weights[i].length; j++) {
+                        new_errors[j] += gradients[i] * layer.weights[i][j];
+                    }
+                }
+                errors = new_errors;
             }
         }
-
-        // Assign random values for output weights
-        for (let i = 0; i < output_nodes; i++) {
-            this.output_weights[i] = [];
-            for (let j = 0; j < hidden_nodes; j++) {
-                this.output_weights[i][j] = Math.random() * 2 - 1;
-            }
-        }
-
-        // BIAS
-        // Assign random values for hidden bias
-        for (let i = 0; i != hidden_nodes; i++) {
-            let randfloat = Math.random() * 2 - 1
-            this.hidden_bias[i] = randfloat;
-        }
-
-        // Assign random values for output bias
-        for (let i = 0; i != output_nodes; i++) {
-            let randfloat = Math.random() * 2 - 1
-            this.output_bias[i] = randfloat;
-        }
     }
 
-    // MATH FUNCTIONS
-    // Sigmoid Formula: 1 / (1 + e^-x)
-    sigmoid(x) {
-        return 1 / (1 + Math.exp(-x));
-    }
+    train(lr, training_data, epochs = 10000) {
+        for (let epoch = 0; epoch < epochs; epoch++) {
+            let total_loss = 0;
 
-    // Calculating the hidden layer output
-    forwardHidden(inputs) {
-        let hidden_layer_outputs = [];
+            for (let sample of training_data) {
+                const predictions = this.feedForward(sample.input);
+                this.backpropagation(sample, lr);
 
-        for (let i = 0; i < this.hidden_weights.length; i++) {
-            let sum = inputs.reduce((acc, val, idx) => acc + val * this.hidden_weights[i][idx], this.hidden_bias[i]);
-            hidden_layer_outputs.push(this.sigmoid(sum))
-        }
-        this.hidden_layer_outputs = hidden_layer_outputs;
-    }
-
-    feedforward(inputs) {
-        this.forwardHidden(inputs);
-    
-        let output = [];
-        for (let i = 0; i < this.output_weights.length; i++) {
-            let sum = this.hidden_layer_outputs.reduce(
-                (acc, val, idx) => acc + val * this.output_weights[i][idx],
-                this.output_bias[i]
-            );
-            output.push(this.sigmoid(sum));
-        }
-    
-        return output;
-    }
-    
-
-    calculate_output() {
-        let output_layer_outputs = [];
-
-        for (let i = 0; i < this.output_weights.length; i++) {
-            let sum = this.hidden_layer_outputs.reduce((acc, val, idx) => acc + val * this.output_weights[i][idx], this.output_bias[i]);
-            output_layer_outputs.push(this.sigmoid(sum));
-        }
-    this.output_layer_outputs = output_layer_outputs;
-    }
-
-    backpropagation(sample) {
-        let targets = sample.output;
-        let output_error = [];
-        let hidden_error = [];
-
-        // Calculate the output error based on the targets
-        for (let i = 0; i < this.output_layer_outputs.length; i++) {
-            output_error[i] = targets[i] - this.output_layer_outputs[i];
-        }
-
-        // Calculate the hidden error based on the output layer
-        for (let j = 0; j < this.hidden_weights.length; j++) {
-            let sum = 0;
-            for (let i = 0; i < this.output_weights.length; i++) {
-                sum += output_error[i] * this.output_weights[i][j];
-            }
-            hidden_error[j] = sum;
-        }
-
-        // Calculate the hidden graident based on the hidden error, and sigmoid derivative
-        let hidden_gradient = [];
-
-        for (let i = 0; i < hidden_error.length; i++) {
-            hidden_gradient[i] = hidden_error[i] * (this.hidden_layer_outputs[i] * (1 - this.hidden_layer_outputs[i]))
-        }
-
-        // Calculate the output graident based on the ouput error, and sigmoid derivative
-        let output_gradient = [];
-
-        for (let i = 0; i < output_error.length; i++) {
-            output_gradient[i] = output_error[i] * (this.output_layer_outputs[i] * (1 - this.output_layer_outputs[i]))
-        }
-
-        // Adjust hidden weights based on hidden_gradient
-        for (let j = 0; j < this.hidden_weights.length; j++) {
-            for (let k = 0; k < this.hidden_weights[j].length; k++) {
-                let delta = this.learning_rate * hidden_gradient[j] * sample.input[k];
-                this.hidden_weights[j][k] += delta;
-            }
-        }
-        
-        // Adjust output weights based on output_gradient
-        for (let i = 0; i < this.output_weights.length; i++) {
-            for (let j = 0; j < this.output_weights[i].length; j++) {
-                let delta = this.learning_rate * output_gradient[i] * this.hidden_layer_outputs[j];
-                this.output_weights[i][j] += delta;
-            }
-        }    
-    }
-
-    calculateLoss(targets, predictions) {
-        let sumSquaredErrors = 0;
-        for (let i = 0; i < targets.length; i++) {
-            sumSquaredErrors += Math.pow(targets[i] - predictions[i], 2);
-        }
-        return sumSquaredErrors / targets.length;
-    }
-
-    calculateAccuracy(targets, predictions, threshold = 0.5) {
-        let correctCount = 0;
-        
-        // Compare predictions with actual targets, counting correct predictions
-        for (let i = 0; i < targets.length; i++) {
-            // If the difference between target and prediction is smaller than the threshold, count it as correct
-            if (Math.abs(targets[i] - predictions[i]) < threshold) {
-                correctCount++;
-            }
-        }
-
-        return correctCount / targets.length;
-    }
-
-    train(lr, training_data, max_epoch) {
-        this.training_data = training_data;
-        this.learning_rate = lr;
-
-        let total_loss = 0;
-        let correct_predictions = 0;
-        let total_predictions = 0;
-        
-        for (let epoch = 0; epoch < max_epoch; epoch++) {
-            training_data.forEach(sample => {
-                this.forwardHidden(sample.input);
-                this.calculate_output();
-                this.backpropagation(sample);
-
-                let loss = this.calculateLoss(sample.output, this.output_layer_outputs);
+                const loss = predictions.reduce(
+                    (acc, p, i) => acc + (sample.output[i] - p) ** 2,
+                    0
+                );
                 total_loss += loss;
+            }
 
-                let accuracy = this.calculateAccuracy(sample.output, this.output_layer_outputs);
-                correct_predictions += accuracy
-                total_predictions++
-            });
-
-            total_loss /= this.training_data.length;
-            let average_accuracy = Math.round((correct_predictions / total_predictions) * 100)
-    
-            console.log(`Epoch ${epoch + 1}: Loss = ${total_loss}, Accuracy = ${average_accuracy}%`);
+            if (epoch % 1000 === 0) {
+                console.log(
+                    `Epoch ${epoch}: Loss = ${(total_loss / training_data.length).toFixed(6)}`
+                );
+            }
         }
-
     }
 
-    save_data(filepath = "saved_data.json") {
-        const data = {
-            output_layer_outputs: this.output_layer_outputs,
-            output_bias: this.output_bias,
-            hidden_weights: this.hidden_weights,
-            hidden_bias: this.hidden_bias
-        };
-    
-        const json = JSON.stringify(data, null, 2);
-
-        writeFileSync(filepath, json);
+    save(file = "weights.json") {
+        const data = JSON.stringify(this.layers, null, 2);
+        writeFileSync(file, data);
     }
 
-    load_data(filename = "saved_data.json") {
-        const json = readFileSync(filename);
-        const data = JSON.parse(json);
-
-        this.output_layer_outputs = data.output_layer_outputs;
-        this.output_bias = data.output_bias;
-        this.hidden_weights = data.hidden_weights;
-        this.hidden_bias = data.hidden_bias;
-
-        console.log(`Loaded from ${filename}`);
+    load(file = "weights.json") {
+        const data = JSON.parse(readFileSync(file));
+        this.layers = data.map(l => Object.assign(new Layer(0, 0), l));
     }
 }
